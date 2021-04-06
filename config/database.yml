@@ -1,0 +1,15 @@
+default: &default
+  adapter: postgresql
+  encoding: unicode
+  pool: <%= ENV['DB_POOL_THREADS'] %>
+  database: <%= ENV['BMC_DATABASE_NAME'] %>
+  username: <%= ENV['BMC_DATABASE_USERNAME'] %>
+  password: <%= ENV['BMC_DATABASE_PASSWORD'] %>
+  port: <%= ENV['DB_PORT'] %>
+  host: <%= ENV['HOST'] %>
+development:
+   <<: *default
+test:
+   <<: *default
+production:
+   <<: *default

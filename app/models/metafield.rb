@@ -1,0 +1,2 @@
+class Metafield < ApplicationRecord
+end
