@@ -42,7 +42,7 @@ class Metafield < ApplicationRecord
                          namespace: metafield_details["namespace"],
                          value: metafield_details["value"]
                          )
-                     response = HTTParty.post("https://#{ENV['SHOPIFY_API_KEY']}:#{ENV['SHOPIFY_API_SECRET']}@#{ENV['SHOPIFY_STORE_DOMAIN']}/admin/api/2021-01/products/#{product_ids[i]}/metafields.json", 
+                     HTTParty.post("https://#{ENV['SHOPIFY_API_KEY']}:#{ENV['SHOPIFY_API_SECRET']}@#{ENV['SHOPIFY_STORE_DOMAIN']}/admin/api/2021-01/products/#{product_ids[i]}/metafields.json", 
                      :body => {
                          "metafield": {
                          "namespace": metafield_details["namespace"],
