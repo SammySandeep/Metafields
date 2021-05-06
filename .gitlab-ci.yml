@@ -1,0 +1,82 @@
+image: docker:latest
+
+services:
+  - docker:dind
+
+variables:
+  DOCKER_HOST: tcp://docker:2375
+  DOCKER_TLS_CERTDIR: ""
+  CONTAINER_IMAGE: registry.klocapps.com/kloc/kloc-bulk-metafield-creator:$CI_COMMIT_SHORT_SHA
+  STAGING_DOMAIN: staging-bmc.klocapps.com
+  PRODUCTION_DOMAIN: raffle.klocapps.com
+  
+stages:
+  - build
+  - staging
+  - production
+
+before_script:
+  - docker login -u $DOCKER_USERNAME -p $DOCKER_LOGIN registry.klocapps.com
+  
+.ssh_template: &ssh_definition
+   - which ssh-agent || ( apt-get update -y && apt-get install openssh-client -y )
+   - eval $(ssh-agent -s)
+   
+.ssh_and_known_host_modification_template: &ssh_and_known_host_modification_definition
+   - mkdir -p ~/.ssh
+   - chmod 700 ~/.ssh
+   - '[[ -f /.dockerenv ]] && echo -e "Host *\n\tStrictHostKeyChecking no\n\n" > ~/.ssh/config'
+   
+.only-default: &only-default
+  only:
+    - master
+
+build:
+  stage: build
+  script:
+   - docker build -t $CONTAINER_IMAGE .
+   - docker push $CONTAINER_IMAGE
+  <<: *only-default
+
+deploy_staging:
+  stage: staging
+  variables:
+    DOMAIN: $STAGING_DOMAIN
+  script:
+   - *ssh_definition
+   - echo "$S_SSH_PRIVATE_KEY" | tr -d '\r' | ssh-add -
+   - *ssh_and_known_host_modification_definition
+   - ssh kloc-admin@64.225.87.247 "cd kloc-bulk-metafield-creator/ && git pull"
+   - ssh kloc-admin@64.225.87.247 "sudo echo "TAG=$CI_COMMIT_SHORT_SHA"$'\n'"DB_POOL_THREADS=$S_DB_POOL_THREADS"$'\n'"BMC_DATABASE_NAME=$S_BMC_DATABASE_NAME"$'\n'"BMC_DATABASE_USERNAME=$S_BMC_DATABASE_USERNAME"$'\n'"BMC_DATABASE_PASSWORD=$S_BMC_DATABASE_PASSWORD"$'\n'"HOST=$S_HOST"$'\n'"DB_PORT=$DB_PORT"$'\n'"SHOPIFY_API_KEY=$S_SHOPIFY_API_KEY"$'\n'"SHOPIFY_API_SECRET=$S_SHOPIFY_API_SECRET"$'\n'"SHOPIFY_STORE_DOMAIN=$S_SHOPIFY_STORE_DOMAIN"> .env && sudo docker-compose config && sudo docker-compose up -d && sudo docker-compose run rails bundle exec rake db:create && sudo docker-compose run rails bundle exec rake db:migrate "
+  environment:
+    name: staging
+    url: https://$DOMAIN
+  <<: *only-default
+
+
+deploy_production:
+  stage: production
+  variables:
+    DOMAIN: $PRODUCTION_DOMAIN
+  script:
+   - *ssh_definition
+   - echo "$P_SSH_PRIVATE_KEY" | tr -d '\r' | ssh-add -
+   - *ssh_and_known_host_modification_definition
+   - ssh ubuntu@54.215.115.70 "cd shopify-kloc-raffle/ && git pull"
+   - ssh ubuntu@54.215.115.70 "sudo echo "TAG=$CI_COMMIT_SHORT_SHA"$'\n'"RAILS_MAX_THREADS=$P_RAILS_MAX_THREADS"$'\n'"RAFFLE_DATABASE_NAME=$P_RAFFLE_DATABASE_NAME"$'\n'"RAFFLE_DATABASE_USERNAME=$P_RAFFLE_DATABASE_USERNAME"$'\n'"RAFFLE_DATABASE_PASSWORD=$P_RAFFLE_DATABASE_PASSWORD"$'\n'"HOST=$P_HOST"$'\n'"SHOPIFY_API_KEY=$P_SHOPIFY_API_KEY"$'\n'"SHOPIFY_API_SECRET=$P_SHOPIFY_API_SECRET"$'\n'"URL=$P_URL"$'\n'"SIDEKIQ_USERNAME=$SIDEKIQ_USERNAME"$'\n'"SIDEKIQ_PASSWORD=$SIDEKIQ_PASSWORD"$'\n'"DB_PORT=$DB_PORT"$'\n'"REDIS_URL=$P_REDIS_URL"$'\n'"KEY=$P_ENCRYPT_AND_DECRYPT_KEY"$'\n'"EMAIL_API=$AWS_API_KEY"$'\n'"EMAIL_PWD=$AWS_SECRET_KEY"$'\n'"EMAIL_SMTP=$AWS_SMTP"$'\n'"EMAIL=$P_EMAIL"$'\n'"DOMAIN=$P_DOMAIN"$'\n'"OTP_DURATION=$OTP_DURATION"$'\n'"INFLUXDB_NAME=$P_INFLUXDB_NAME"$'\n'"INFLUXDB_PORT=$INFLUXDB_PORT"$'\n'"INFLUXDB_HOST=$INFLUXDB_HOST"> .env && sudo docker-compose config && sudo docker-compose up -d && sudo docker-compose run rails bundle exec rake db:create && sudo docker-compose run rails bundle exec rake db:migrate " 
+  environment:
+    name: prodution
+    url: https://$DOMAIN
+  when: manual
+  
+
+.rollback_production:
+  stage: production
+  script:
+   - *ssh_definition
+   - echo "$P_SSH_PRIVATE_KEY" | tr -d '\r' | ssh-add -
+   - *ssh_and_known_host_modification_definition
+   - ssh ubuntu@54.215.115.70 "sudo docker service rollback loginotp_apdp"
+  environment:
+    name: prodution
+  when: manual
